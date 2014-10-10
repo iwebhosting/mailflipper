@@ -2,26 +2,63 @@ package main
 
 import (
     "flag"
+    "fmt"
     "strconv"
     "log"
     "os"
-    "net"
     "net/url"
     "github.com/bradfitz/go-smtpd/smtpd"
 )
+
+func stringInSlice(a string, list []string) bool {
+    for _, b := range list {
+        if b == a {
+            return true
+        }
+    }
+    return false
+}
 
 var port int
 var bindaddr string
 var hookurl string
 var hostname string
 
+type sources []string
+var sourceFlag sources
+
 var exitCh chan int
+
+type env struct {
+    *smtpd.BasicEnvelope
+}
+
+func (s *sources) String() string {
+    return fmt.Sprint(*s)
+}
+
+func (s *sources) Set(value string) error {
+    *s = append(*s, value)
+    return nil
+}
+
+func onNewMail(c smtpd.Connection, from smtpd.MailAddress) (smtpd.Envelope, error) {
+    log.Printf("New mail from %q", from)
+    if len(sourceFlag) > 0 {
+        if !stringInSlice(from.Email(), sourceFlag) {
+            // TODO: I dont think this results in something terribly graceful...!
+            return nil, smtpd.SMTPError("Disallowed source address")
+        }
+    }
+    return &env{new(smtpd.BasicEnvelope)}, nil
+}
 
 func init() {
     flag.IntVar(&port, "port", 25, "the port to bind to")
     flag.StringVar(&bindaddr, "bind", "0.0.0.0", "the address to bind to")
     flag.StringVar(&hookurl, "url", "", "the webhook endpoint")
     flag.StringVar(&hostname, "hostname", "mail.local", "the hostname advertised to clients")
+    flag.Var(&sourceFlag, "source", "optional source email address whitelisting. Can be set multiple times")
 }
 
 func main() {
@@ -45,20 +82,12 @@ func main() {
     srv := &smtpd.Server{
         Addr: addr,
         Hostname: hostname,
-        OnNewMail: nil,
+        OnNewMail: onNewMail,
     }
 
-    ln, e := net.Listen("tcp", addr)
-
-    if e != nil {
-        log.Fatalf("Unable to bind to %s: %s", addr, e)
+    if err := srv.ListenAndServe(); err != nil {
+        log.Fatalf("ListenAndServe: %v", err)
     }
-
-    if err != nil {
-        log.Fatalf("Error starting server: %s", err)
-    }
-
-    go srv.Serve(ln)
 
     exitCh = make(chan int)
     for {
