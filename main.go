@@ -38,24 +38,24 @@ func (s *sources) Set(value string) error {
     return nil
 }
 
-type Mail struct {
-    From smtpd.MailAddress
-    To   []string
-    Data []byte
+type mail struct {
+    from smtpd.MailAddress
+    to   []string
+    data []byte
 }
 
 type env struct {
     *smtpd.BasicEnvelope
-    m Mail
+    m mail
 }
 
 func (e *env) Write(line []byte) error {
-    e.m.Data = append(e.m.Data, line...)
+    e.m.data = append(e.m.data, line...)
     return nil
 }
 
 func (e *env) Close() error {
-    log.Printf("Message received: %s\n", string(e.m.Data[:]))
+    log.Printf("Message received: %s\n", string(e.m.data[:]))
     return nil
 }
 
@@ -67,7 +67,7 @@ func onNewMail(c smtpd.Connection, from smtpd.MailAddress) (smtpd.Envelope, erro
             return nil, smtpd.SMTPError("Disallowed source address")
         }
     }
-    return &env{new(smtpd.BasicEnvelope), Mail{From: from}}, nil
+    return &env{new(smtpd.BasicEnvelope), mail{from: from}}, nil
 }
 
 func init() {
